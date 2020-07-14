@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <assert.h>
+#include <limits.h>
 #include <fstrace.h>
 #include <fsdyn/fsalloc.h>
 #include <fsdyn/charstr.h>
@@ -68,8 +69,8 @@ jsonop_t *jsonop_make_request(async_t *async, http_client_t *client,
     if (!http_op)
         return NULL;
     jsonencoder_t *encoder = json_encode(async, request_body);
-    ssize_t size = jsonencoder_size(encoder);
-    if (size < 0) {
+    size_t size = jsonencoder_size(encoder);
+    if (size > SSIZE_MAX) {
         FSTRACE(ASYNCHTTP_JSONOP_CREATE_FAIL_TOO_LARGE, client, uri, encoder);
         jsonencoder_close(encoder);
         http_op_close(http_op);
