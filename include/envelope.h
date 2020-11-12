@@ -152,6 +152,38 @@ bool http_env_parse_trailers(http_env_t *envelope,
 
 #ifdef __cplusplus
 }
+
+namespace fsecure::asynchttp {
+
+inline void http_env_add_header(http_env_t *envelope, char *field, char *value)
+{
+    http_env_add_header_2(envelope, field, true, value, true);
+}
+
+inline void http_env_add_header(http_env_t *envelope,
+                                const char *field,
+                                char *value)
+{
+    http_env_add_header_2(envelope,
+                          const_cast<char *>(field),
+                          false,
+                          value,
+                          true);
+}
+
+inline void http_env_add_header(http_env_t *envelope,
+                                char *field,
+                                const char *value)
+{
+    http_env_add_header_2(envelope,
+                          field,
+                          true,
+                          const_cast<char *>(value),
+                          false);
+}
+
+} // namespace fsecure::asynchttp
+
 #endif
 
 #endif
