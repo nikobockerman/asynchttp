@@ -12,8 +12,8 @@
 typedef enum {
     JSONOP_REQUESTED,
     JSONOP_READING,
-    JSONOP_DONE_200,  /* received 200 OK and parsed the JSON response */
-    JSONOP_DONE_OTHER, /* received something else; content stream available */
+    JSONOP_DONE_DECODED,     /* received; parsed the JSON response */
+    JSONOP_DONE_NOT_DECODED, /* received; content stream available */
     JSONOP_FAILED,
     JSONOP_ZOMBIE
 } jsonop_state_t;
@@ -24,14 +24,15 @@ struct jsonop {
     jsonop_state_t state;
     http_op_t *http_op;
     action_1 callback;
-    jsondecoder_t *content;             /* JSONOP_READING, JSONOP_DONE_200 */
+    jsondecoder_t *content;             /* JSONOP_READING, JSONOP_DONE_DECODED*/
     const http_env_t *response_headers; /* JSONOP_READING, JSONOP_DONE_* */
-    json_thing_t *response_body;        /* JSONOP_DONE_200 */
+    json_thing_t *response_body;        /* JSONOP_DONE_DECODED */
     /* At the moment, we don't give the application access to
      * response_stream. In the end, we can, but note that we need to
      * decide who closes the stream. */
-    bytestream_1 response_stream;       /* JSONOP_DONE_OTHER */
+    bytestream_1 response_stream;       /* JSONOP_DONE_UNDECODED */
     int err;                            /* JSONOP_FAILED */
+    bool decode_body_on_error;
 };
 
 FSTRACE_DECL(ASYNCHTTP_JSONOP_REGISTER, "UID=%64u OBJ=%p ACT=%p");
@@ -70,6 +71,7 @@ jsonop_t *jsonop_make_request(async_t *async, http_client_t *client,
     op->uid = fstrace_get_unique_id();
     op->callback = NULL_ACTION_1;
     op->http_op = http_op;
+    op->decode_body_on_error = false;
     http_env_add_header(jsonop_get_request_envelope(op),
                         "Content-Type", "application/json");
     jsonencoder_t *encoder = json_encode(op->async, request_body);
@@ -80,6 +82,14 @@ jsonop_t *jsonop_make_request(async_t *async, http_client_t *client,
                         jsonencoder_as_bytestream_1(encoder));
     op->state = JSONOP_REQUESTED;
     return op;
+}
+
+FSTRACE_DECL(ASYNCHTTP_JSONOP_DECODE_BODY_ON_ERROR, "UID=%64u");
+
+void jsonop_decode_response_on_error(jsonop_t *op)
+{
+    FSTRACE(ASYNCHTTP_JSONOP_DECODE_BODY_ON_ERROR, op->uid);
+    op->decode_body_on_error = true;
 }
 
 FSTRACE_DECL(ASYNCHTTP_JSONOP_SET_TIMEOUT, "UID=%64u DURATION=%64d");
@@ -129,10 +139,10 @@ static const char *trace_state(void *pstate)
             return "JSONOP_REQUESTED";
         case JSONOP_READING:
             return "JSONOP_READING";
-        case JSONOP_DONE_200:
-            return "JSONOP_DONE_200";
-        case JSONOP_DONE_OTHER:
-            return "JSONOP_DONE_OTHER";
+        case JSONOP_DONE_DECODED:
+            return "JSONOP_DONE_DECODED";
+        case JSONOP_DONE_NOT_DECODED:
+            return "JSONOP_DONE_NOT_DECODED";
         case JSONOP_FAILED:
             return "JSONOP_FAILED";
         case JSONOP_ZOMBIE:
@@ -163,8 +173,8 @@ static bool jockey_requested(jsonop_t *op)
     }
     http_op_get_response_content(op->http_op, &op->response_stream);
     int response_code = http_env_get_code(op->response_headers);
-    if (response_code != 200) {
-        set_op_state(op, JSONOP_DONE_OTHER);
+    if (!op->decode_body_on_error && response_code != 200) {
+        set_op_state(op, JSONOP_DONE_NOT_DECODED);
         return true;
     }
     op->content = open_jsondecoder(op->async, op->response_stream, 1000000);
@@ -178,7 +188,7 @@ static bool jockey_reading(jsonop_t *op)
     op->response_body = jsondecoder_receive(op->content);
     if (!op->response_body)
         return false;
-    set_op_state(op, JSONOP_DONE_200);
+    set_op_state(op, JSONOP_DONE_DECODED);
     return true;
 }
 
@@ -194,8 +204,8 @@ static void jockey_request(jsonop_t *op)
                 if (!jockey_reading(op))
                     return;
                 break;
-            case JSONOP_DONE_200:
-            case JSONOP_DONE_OTHER:
+            case JSONOP_DONE_DECODED:
+            case JSONOP_DONE_NOT_DECODED:
             case JSONOP_FAILED:
                 return;
             default:
@@ -210,14 +220,14 @@ json_thing_t *jsonop_response_body(jsonop_t *op)
 {
     jockey_request(op);
     switch (op->state) {
-        case JSONOP_DONE_200:
+        case JSONOP_DONE_DECODED:
             FSTRACE(ASYNCHTTP_JSONOP_RESPONSE_BODY, op->uid);
             return op->response_body;
         case JSONOP_FAILED:
             errno = op->err;
             FSTRACE(ASYNCHTTP_JSONOP_RESPONSE_BODY_FAIL, op->uid);
             return NULL;
-        case JSONOP_DONE_OTHER:
+        case JSONOP_DONE_NOT_DECODED:
         case JSONOP_ZOMBIE:
             assert(false);
         default:
@@ -234,8 +244,8 @@ const http_env_t *jsonop_response_headers(jsonop_t *op)
 {
     jockey_request(op);
     switch (op->state) {
-        case JSONOP_DONE_200:
-        case JSONOP_DONE_OTHER:
+        case JSONOP_DONE_DECODED:
+        case JSONOP_DONE_NOT_DECODED:
             FSTRACE(ASYNCHTTP_JSONOP_RESPONSE_HEADERS, op->uid);
             return op->response_headers;
         case JSONOP_FAILED:
@@ -275,11 +285,11 @@ void jsonop_close(jsonop_t *op)
         case JSONOP_FAILED:
         case JSONOP_REQUESTED:
             break;
-        case JSONOP_DONE_200:
+        case JSONOP_DONE_DECODED:
             jsondecoder_close(op->content);
             json_destroy_thing(op->response_body);
             break;
-        case JSONOP_DONE_OTHER:
+        case JSONOP_DONE_NOT_DECODED:
             bytestream_1_close(op->response_stream);
             break;
         case JSONOP_READING:
@@ -292,4 +302,3 @@ void jsonop_close(jsonop_t *op)
     set_op_state(op, JSONOP_ZOMBIE);
     async_wound(op->async, op);
 }
-
