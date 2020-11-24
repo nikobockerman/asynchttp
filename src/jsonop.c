@@ -3,7 +3,6 @@
 #include <fstrace.h>
 #include <fsdyn/fsalloc.h>
 #include <fsdyn/charstr.h>
-#include <async/jsonencoder.h>
 #include <async/jsondecoder.h>
 #include "client.h"
 #include "jsonop.h"
@@ -70,14 +69,7 @@ jsonop_t *jsonop_make_request(async_t *async, http_client_t *client,
     op->uid = fstrace_get_unique_id();
     op->callback = NULL_ACTION_1;
     op->http_op = http_op;
-    http_env_add_header(jsonop_get_request_envelope(op),
-                        "Content-Type", "application/json");
-    jsonencoder_t *encoder = json_encode(op->async, request_body);
-    FSTRACE(ASYNCHTTP_JSONOP_CREATE, op->uid, op, async, client, uri, encoder);
-    ssize_t size = jsonencoder_size(encoder);
-    assert(size >= 0);
-    http_op_set_content(op->http_op, size,
-                        jsonencoder_as_bytestream_1(encoder));
+    http_op_set_content_json(op->http_op, request_body);
     op->state = JSONOP_REQUESTED;
     return op;
 }

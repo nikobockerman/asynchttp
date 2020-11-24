@@ -1,9 +1,11 @@
 #ifndef __ASYNCHTTP_CLIENT__
 #define __ASYNCHTTP_CLIENT__
 
+#include "connection.h"
+
 #include <async/tls_connection.h>
 #include <async/fsadns.h>
-#include "connection.h"
+#include <encjson.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -85,6 +87,10 @@ http_op_t *http_client_make_request(http_client_t *client,
  * content_length. */
 void http_op_set_content(http_op_t *op, ssize_t content_length,
                          bytestream_1 content);
+
+/* Set content from the given json object. Adds also Content-Type header
+ * specifying that the content is json. */
+void http_op_set_content_json(http_op_t *op, json_thing_t *content);
 
 /* Set or cancel a maximum expected duration for the operation. Each
  * operation has an associated convenience timer that is not active by

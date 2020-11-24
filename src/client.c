@@ -7,6 +7,7 @@
 #include <fsdyn/charstr.h>
 #include <fsdyn/list.h>
 #include <async/emptystream.h>
+#include <async/jsonencoder.h>
 #include <async/farewellstream.h>
 #include <async/switchstream.h>
 #include <async/tcp_client.h>
@@ -543,6 +544,18 @@ void http_op_set_content(http_op_t *op, ssize_t size, bytestream_1 content)
     FSTRACE(ASYNCHTTP_OP_SET_CONTENT, op->uid, content.obj);
     op->request_content = content;
     op->content_length = size;
+}
+
+FSTRACE_DECL(ASYNCHTTP_OP_SET_CONTENT_JSON, "UID=%64u CONTENT=%I");
+
+void http_op_set_content_json(http_op_t *op, json_thing_t *content)
+{
+    FSTRACE(ASYNCHTTP_OP_SET_CONTENT_JSON, op->uid, json_trace, content);
+    http_env_add_header(op->request, "Content-Type", "application/json");
+    jsonencoder_t *encoder = json_encode(op->client->async, content);
+    ssize_t size = jsonencoder_size(encoder);
+    assert(size >= 0);
+    http_op_set_content(op, size, jsonencoder_as_bytestream_1(encoder));
 }
 
 static const char *trace_timer_state(void *pstate)
