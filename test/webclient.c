@@ -50,6 +50,11 @@ static void close_and_exit(globals_t *g)
     async_quit_loop(g->async);
 }
 
+static void set_user_agent(http_env_t *envelope)
+{
+    http_env_add_header(envelope, "User-Agent", "asynchttp-test");
+}
+
 static void probe_receive(globals_t *g)
 {
     if (!g->jockey)
@@ -90,6 +95,7 @@ static void probe_receive(globals_t *g)
 static void get_next_raw(globals_t *g)
 {
     http_op_t *op = http_client_make_request(g->client, "GET", g->args->uri);
+    set_user_agent(http_op_get_request_envelope(op));
     if (g->args->timeout >= 0)
         http_op_set_timeout(op, g->args->timeout * ASYNC_MS);
     g->jockey = make_http_op_jockey(g->async, op, -1);
@@ -124,6 +130,7 @@ static void get_next_json(globals_t *g)
 {
     g->json_request =
         jsonop_make_get_request(g->async, g->client, g->args->uri);
+    set_user_agent(jsonop_get_request_envelope(g->json_request));
     if (g->args->timeout >= 0)
         jsonop_set_timeout(g->json_request, g->args->timeout * ASYNC_MS);
     action_1 probe_cb = { g, (act_1) probe_json_receive };
