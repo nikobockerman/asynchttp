@@ -76,18 +76,16 @@ test-jsonop() {
         ./stage/$arch/build/test/webclient \
         --json \
         --timeout 1 \
-        http://echo.jsontest.com/key/value
+        https://api.github.com/repos/f-secure/asynchttp/tags
     [ $? -eq 1 ] || return 1
     set -e
     run-test > stage/$arch/body \
         $arch \
         ./stage/$arch/build/test/webclient \
         --json \
-        http://echo.jsontest.com/key/value
+        https://api.github.com/repos/f-secure/asynchttp/tags
     cat > stage/$arch/expected-body <<EOF
-{
-  "key": "value"
-}
+[]
 EOF
     cmp stage/$arch/expected-body stage/$arch/body
 }
